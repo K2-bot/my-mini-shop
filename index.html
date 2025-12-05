@@ -6,24 +6,18 @@
     <title>My Shop</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
     <style>
-        body { font-family: sans-serif; padding: 15px; margin: 0; padding-bottom: 100px; background: #fff; color: #000; }
-        .product-card { display: flex; background: #f5f5f5; border-radius: 12px; padding: 10px; margin-bottom: 12px; gap: 12px; align-items: center; }
+        body { font-family: sans-serif; padding: 15px; padding-bottom: 100px; margin: 0; background-color: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+        .product-card { display: flex; background: var(--tg-theme-secondary-bg-color, #f5f5f5); border-radius: 12px; padding: 10px; margin-bottom: 12px; gap: 12px; align-items: center; }
         .product-img { width: 70px; height: 70px; background: #ddd; border-radius: 8px; object-fit: cover; }
         .info { flex: 1; }
         .title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
         .price { color: #2ecc71; font-weight: bold; }
-        .btn-add { background: #3390ec; color: #fff; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
+        .btn-add { background: var(--tg-theme-button-color, #3390ec); color: var(--tg-theme-button-text-color, #fff); border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
         
-        /* Loading & Error Box */
-        #status-msg { 
-            text-align: center; margin-top: 50px; color: #666; font-size: 14px; 
-            padding: 20px; border-radius: 8px; background: #f9f9f9;
-        }
-
         #checkout-section { display: none; margin-top: 20px; border-top: 1px solid #ddd; padding-top: 20px; }
-        input, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        input, textarea { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+        #status-msg { text-align: center; margin-top: 50px; color: #666; }
     </style>
 </head>
 <body>
@@ -34,23 +28,15 @@
 
     <div id="checkout-section">
         <label><b>📝 ပို့ဆောင်ရန် လိပ်စာဖြည့်ပါ</b></label>
-        <input type="tel" id="user-phone" placeholder="ဖုန်းနံပါတ် (09...)">
-        <textarea id="user-address" rows="2" placeholder="လိပ်စာ"></textarea>
+        <input type="tel" id="user-phone" placeholder="ဖုန်းနံပါတ် (09xxxxxxxxx)">
+        <textarea id="user-address" rows="2" placeholder="အိမ်အမှတ်၊ လမ်း၊ မြို့နယ်"></textarea>
     </div>
 
     <script>
-        // ၁။ Config (မိတ်ဆွေပေးထားသော Key များ)
+        // ၁။ Config
         const SUPABASE_URL = 'https://lqqlapefokawylbzuhvj.supabase.co'; 
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxcWxhcGVmb2thd3lsYnp1aHZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5MjYwODUsImV4cCI6MjA4MDUwMjA4NX0.LKypQGK6hvJvxsD9w-qPZVuiw7NF3xR8g1D2LvI8eH0';
-
-        // Error Checking
-        try {
-            if (typeof supabase === 'undefined') throw new Error("Supabase Script မပွင့်ပါ။ VPN စမ်းကြည့်ပါ။");
-        } catch (e) {
-            document.getElementById('status-msg').innerText = "System Error: " + e.message;
-            document.getElementById('status-msg').style.color = "red";
-        }
-
+        
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const tg = window.Telegram.WebApp;
         tg.expand();
@@ -58,88 +44,77 @@
         let cart = {};
         let productsMap = {};
 
+        // ၂။ Order တင်ခြင်း Function (Fixed)
+        function submitOrder() {
+            const phone = document.getElementById('user-phone').value;
+            const address = document.getElementById('user-address').value;
+
+            if (!phone || !address) {
+                tg.showPopup({ title: 'Alert', message: 'ဖုန်းနံပါတ်နှင့် လိပ်စာ ဖြည့်ပါ' });
+                return;
+            }
+
+            const payload = {
+                cart: Object.keys(cart).map(key => ({ id: key, quantity: cart[key] })),
+                user_info: { phone: phone, address: address }
+            };
+
+            tg.MainButton.showProgress();
+            tg.sendData(JSON.stringify(payload));
+        }
+
+        // ၃။ Main Button Click Event
+        tg.MainButton.onClick(submitOrder);
+
+        // ၄။ ပစ္စည်းများ ဆွဲထုတ်ခြင်း
         async function fetchProducts() {
             try {
-                // Supabase မှ Data ဆွဲမည်
-                const { data, error } = await sb
-                    .from('products')
-                    .select('*')
-                    .eq('is_active', true)
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-
-                const container = document.getElementById('product-list');
-                const statusMsg = document.getElementById('status-msg');
-
-                if (data && data.length > 0) {
-                    statusMsg.style.display = 'none'; // Loading ပျောက်သွားမည်
+                const { data, error } = await sb.from('products').select('*').eq('is_active', true).order('created_at', { ascending: false });
+                
+                if (data) {
+                    document.getElementById('status-msg').style.display = 'none';
+                    const container = document.getElementById('product-list');
                     
                     data.forEach(product => {
                         productsMap[product.id] = product;
                         const imgUrl = (product.images && product.images.length > 0) ? product.images[0] : 'https://placehold.co/80x80?text=No+Img';
                         
-                        // JSON Spec
-                        let specText = "";
-                        if (product.specifications && product.specifications.brand) specText = product.specifications.brand;
-
                         const item = document.createElement('div');
                         item.className = 'product-card';
                         item.innerHTML = `
                             <img src="${imgUrl}" class="product-img">
                             <div class="info">
                                 <div class="title">${product.name}</div>
-                                <small>${specText}</small><br>
                                 <span class="price">${product.base_price.toLocaleString()} Ks</span>
                             </div>
                             <button class="btn-add" onclick="addToCart('${product.id}')">Add</button>
                         `;
                         container.appendChild(item);
                     });
-                } else {
-                    statusMsg.innerText = "🏪 ဆိုင်တွင် ပစ္စည်းမရှိသေးပါ (SQL Run ရန်လိုအပ်သည်)";
                 }
-            } catch (err) {
-                document.getElementById('status-msg').innerHTML = "❌ Error: " + err.message;
+            } catch (e) {
+                document.getElementById('status-msg').innerText = "Error: " + e.message;
             }
         }
 
         function addToCart(id) {
             if (!cart[id]) cart[id] = 0;
             cart[id] += 1;
-            updateMainButton();
-        }
-
-        function updateMainButton() {
-            const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
-            const formSection = document.getElementById('checkout-section');
             
+            const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
             if (totalItems > 0) {
-                formSection.style.display = 'block';
-                let totalPrice = 0;
-                for (const [id, qty] of Object.entries(cart)) {
-                    totalPrice += productsMap[id].base_price * qty;
+                document.getElementById('checkout-section').style.display = 'block';
+                let total = 0;
+                for (const [pid, qty] of Object.entries(cart)) {
+                    total += productsMap[pid].base_price * qty;
                 }
-                tg.MainButton.setText(`Order Now (${totalPrice.toLocaleString()} Ks)`);
+                tg.MainButton.setText(`Order Now (${total.toLocaleString()} Ks)`);
                 tg.MainButton.show();
             }
         }
-
-        Telegram.WebApp.onEvent('mainButtonClicked', function(){
-            const phone = document.getElementById('user-phone').value;
-            const address = document.getElementById('user-address').value;
-            if (!phone || !address) {
-                tg.showPopup({ title: 'Alert', message: 'ဖုန်းနံပါတ်နှင့် လိပ်စာ ဖြည့်ပါ' });
-                return;
-            }
-            const payload = {
-                cart: Object.keys(cart).map(key => ({ id: key, quantity: cart[key] })),
-                user_info: { phone: phone, address: address }
-            };
-            tg.sendData(JSON.stringify(payload));
-        });
 
         fetchProducts();
     </script>
 </body>
 </html>
+
