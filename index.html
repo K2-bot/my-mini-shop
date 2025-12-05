@@ -41,32 +41,50 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
+        // စစ်ဆေးချက် - ၁ (Telegram ထဲက ဖွင့်တာ ဟုတ်မဟုတ်)
+        if (!tg.initDataUnsafe || !tg.initDataUnsafe.user) {
+            // alert("သတိပေးချက်: Telegram App အတွင်းမှ ဖွင့်မှသာ Order တင်လို့ရပါမည်။");
+        }
+
         let cart = {};
         let productsMap = {};
 
-        // ၂။ Order တင်ခြင်း Function (Fixed)
+        // ၂။ Order တင်ခြင်း Function (Debug Version)
         function submitOrder() {
-            const phone = document.getElementById('user-phone').value;
-            const address = document.getElementById('user-address').value;
+            try {
+                const phone = document.getElementById('user-phone').value;
+                const address = document.getElementById('user-address').value;
 
-            if (!phone || !address) {
-                tg.showPopup({ title: 'Alert', message: 'ဖုန်းနံပါတ်နှင့် လိပ်စာ ဖြည့်ပါ' });
-                return;
+                if (!phone || !address) {
+                    tg.showPopup({ title: 'Alert', message: 'ဖုန်းနံပါတ်နှင့် လိပ်စာ ဖြည့်ပါ' });
+                    return;
+                }
+
+                const payload = {
+                    cart: Object.keys(cart).map(key => ({ id: key, quantity: cart[key] })),
+                    user_info: { phone: phone, address: address }
+                };
+                
+                // Debug Alert: Data ပို့တော့မည်
+                // alert("Sending Data... (Please wait)");
+
+                tg.MainButton.showProgress();
+                
+                // Data ပို့ခြင်း
+                tg.sendData(JSON.stringify(payload));
+                
+                // Debug Alert: ပို့ပြီးပါပြီ
+                // alert("Data Sent command executed.");
+
+            } catch (error) {
+                tg.MainButton.hideProgress();
+                alert("Error: " + error.message);
             }
-
-            const payload = {
-                cart: Object.keys(cart).map(key => ({ id: key, quantity: cart[key] })),
-                user_info: { phone: phone, address: address }
-            };
-
-            tg.MainButton.showProgress();
-            tg.sendData(JSON.stringify(payload));
         }
 
-        // ၃။ Main Button Click Event
         tg.MainButton.onClick(submitOrder);
 
-        // ၄။ ပစ္စည်းများ ဆွဲထုတ်ခြင်း
+        // ၃။ ပစ္စည်းများ ဆွဲထုတ်ခြင်း
         async function fetchProducts() {
             try {
                 const { data, error } = await sb.from('products').select('*').eq('is_active', true).order('created_at', { ascending: false });
@@ -117,4 +135,5 @@
     </script>
 </body>
 </html>
+
 
