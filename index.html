@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>My Super Store</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #fff);
+            --text-color: var(--tg-theme-text-color, #000);
+            --button-color: var(--tg-theme-button-color, #3390ec);
+            --button-text: var(--tg-theme-button-text-color, #fff);
+            --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 15px; padding-bottom: 100px; }
+        
+        /* Product Card Design */
+        .product-card { display: flex; background: var(--secondary-bg); border-radius: 12px; padding: 10px; margin-bottom: 12px; gap: 12px; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .product-img { width: 70px; height: 70px; background-color: #ddd; border-radius: 8px; object-fit: cover; }
+        .info { flex: 1; }
+        .title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+        .specs { font-size: 12px; opacity: 0.7; margin-bottom: 4px; display: block; }
+        .price { font-weight: bold; color: #2ecc71; font-size: 14px; }
+        
+        /* Buttons */
+        .btn-add { background-color: var(--button-color); color: var(--button-text); border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13px; }
+        .qty-control { display: flex; align-items: center; gap: 10px; display: none; }
+        .qty-btn { background: #ddd; color: #000; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-weight: bold; }
+
+        /* Checkout Form */
+        #checkout-section { display: none; margin-top: 25px; border-top: 1px solid #ddd; padding-top: 20px; }
+        input, textarea { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-family: inherit; background-color: var(--bg-color); color: var(--text-color); }
+        .form-title { font-weight: bold; margin-bottom: 10px; display: block; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+    <h3 style="margin-top: 0;">🛍️ Available Products</h3>
+    <div id="loading">Loading products...</div>
+    <div id="product-list"></div>
+
+    <div id="checkout-section">
+        <label class="form-title">📝 ပို့ဆောင်ရန် လိပ်စာဖြည့်ပါ</label>
+        <input type="tel" id="user-phone" placeholder="ဖုန်းနံပါတ် (09xxxxxxxxx)">
+        <textarea id="user-address" rows="2" placeholder="အိမ်အမှတ်၊ လမ်း၊ မြို့နယ်"></textarea>
+    </div>
+
+    <script>
+        // ၁။ Config (မိတ်ဆွေပေးထားသော Key များကို ထည့်သွင်းထားပါသည်)
+        const SUPABASE_URL = 'https://lqqlapefokawylbzuhvj.supabase.co'; 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxcWxhcGVmb2thd3lsYnp1aHZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5MjYwODUsImV4cCI6MjA4MDUwMjA4NX0.LKypQGK6hvJvxsD9w-qPZVuiw7NF3xR8g1D2LvI8eH0';
+        
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // မျက်နှာပြင်အပြည့်
+
+        let cart = {}; // { id: quantity }
+        let productsMap = {}; // id -> product data (ဈေးတွက်ဖို့)
+
+        // ၂။ ပစ္စည်းများ ဆွဲထုတ်ခြင်း
+        async function fetchProducts() {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .eq('is_active', true)
+                .order('created_at', { ascending: false });
+
+            document.getElementById('loading').style.display = 'none';
+            const container = document.getElementById('product-list');
+
+            if (data) {
+                data.forEach(product => {
+                    productsMap[product.id] = product; // သိမ်းထားလိုက်မယ်
+
+                    // JSONB Data ကို ခွဲခြားပြသခြင်း
+                    let specText = [];
+                    const s = product.specifications || {};
+                    
+                    if (s.brand) specText.push(s.brand);
+                    if (s.author) specText.push("✍️ " + s.author);
+                    if (s.expire_date) specText.push("⏳ " + s.expire_date);
+                    if (product.is_preorder) specText.push("🕒 Pre-order: " + (product.waiting_time || ''));
+
+                    // Image Handling
+                    const imgUrl = (product.images && product.images.length > 0) ? product.images[0] : 'https://placehold.co/80x80?text=No+Img';
+
+                    const item = document.createElement('div');
+                    item.className = 'product-card';
+                    item.innerHTML = `
+                        <img src="${imgUrl}" class="product-img">
+                        <div class="info">
+                            <div class="title">${product.name}</div>
+                            <span class="specs">${specText.join(' • ')}</span>
+                            <div class="price">${product.base_price.toLocaleString()} Ks</div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-add" id="btn-add-${product.id}" onclick="updateCart('${product.id}', 1)">Add</button>
+                            <div class="qty-control" id="qty-control-${product.id}">
+                                <button class="qty-btn" onclick="updateCart('${product.id}', -1)">-</button>
+                                <span id="qty-${product.id}" style="font-weight:bold">0</span>
+                                <button class="qty-btn" onclick="updateCart('${product.id}', 1)">+</button>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+            } else {
+                container.innerHTML = "<p>ပစ္စည်းများ မရှိသေးပါ။</p>";
+            }
+        }
+
+        // ၃။ ခြင်းတောင်း Logic
+        function updateCart(id, change) {
+            if (!cart[id]) cart[id] = 0;
+            cart[id] += change;
+
+            if (cart[id] <= 0) {
+                delete cart[id];
+                document.getElementById(`btn-add-${id}`).style.display = 'block';
+                document.getElementById(`qty-control-${id}`).style.display = 'none';
+            } else {
+                document.getElementById(`btn-add-${id}`).style.display = 'none';
+                document.getElementById(`qty-control-${id}`).style.display = 'flex';
+                document.getElementById(`qty-${id}`).innerText = cart[id];
+            }
+
+            updateMainButton();
+        }
+
+        // ၄။ Telegram Button နှင့် Checkout Form ထိန်းချုပ်ခြင်း
+        function updateMainButton() {
+            const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
+            const formSection = document.getElementById('checkout-section');
+            
+            if (totalItems > 0) {
+                // ဈေးဝယ်နေရင် Form ပြမယ်
+                formSection.style.display = 'block';
+                
+                // စုစုပေါင်းငွေ တွက်မယ်
+                let totalPrice = 0;
+                for (const [id, qty] of Object.entries(cart)) {
+                    totalPrice += productsMap[id].base_price * qty;
+                }
+
+                tg.MainButton.setText(`Order Now (${totalPrice.toLocaleString()} Ks)`);
+                tg.MainButton.show();
+            } else {
+                formSection.style.display = 'none';
+                tg.MainButton.hide();
+            }
+        }
+
+        // ၅။ Order တင်ခြင်း (Bot သို့ Data ပို့ခြင်း)
+        Telegram.WebApp.onEvent('mainButtonClicked', function(){
+            const phone = document.getElementById('user-phone').value;
+            const address = document.getElementById('user-address').value;
+
+            if (!phone || !address) {
+                tg.showPopup({ title: 'လိုအပ်ချက်', message: 'ကျေးဇူးပြု၍ ဖုန်းနံပါတ်နှင့် လိပ်စာ ဖြည့်ပေးပါခင်ဗျာ။' });
+                return;
+            }
+
+            // Bot ဆီပို့မည့် Data
+            const payload = {
+                cart: Object.keys(cart).map(key => ({ id: key, quantity: cart[key] })),
+                user_info: { phone: phone, address: address }
+            };
+
+            tg.sendData(JSON.stringify(payload));
+        });
+
+        // Start
+        fetchProducts();
+    </script>
+</body>
+</html>
